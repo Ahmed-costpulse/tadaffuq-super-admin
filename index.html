@@ -1,0 +1,1247 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tadaffuq — سجل الإدارة والرقابة (Sheet View)</title>
+<meta name="theme-color" content="#0f172a">
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-canvas: #eef2f6;
+    --bg-card: #ffffff;
+    --grid-line: #cbd5e1;
+    --grid-header: #e2e8f0;
+  }
+  body {
+    font-family: 'Cairo', system-ui, sans-serif;
+    background: var(--bg-canvas);
+    color: #0f172a;
+    -webkit-font-smoothing: antialiased;
+  }
+  .tabular-nums { font-variant-numeric: tabular-nums; }
+  .sheet-box {
+    background: var(--bg-card);
+    border: 1px solid #94a3b8;
+    border-radius: 0.5rem;
+    box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);
+    overflow: hidden;
+  }
+  .sheet-bar {
+    background: #1e293b;
+    color: #f8fafc;
+    padding: 0.6rem 0.9rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .excel-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+  }
+  .excel-table th {
+    background: var(--grid-header);
+    color: #0f172a;
+    font-weight: 800;
+    border: 1px solid var(--grid-line);
+    padding: 0.5rem 0.65rem;
+    text-align: right;
+    white-space: nowrap;
+  }
+  .excel-table td {
+    border: 1px solid var(--grid-line);
+    padding: 0.45rem 0.65rem;
+    vertical-align: middle;
+  }
+  .excel-table tbody tr:nth-child(even) td {
+    background: #f8fafc;
+  }
+  .excel-table tbody tr:hover td {
+    background: #eff6ff;
+  }
+  .excel-table tbody tr.violation-row td {
+    background: #fef2f2 !important;
+  }
+  .excel-table tbody tr.violation-row:hover td {
+    background: #fee2e2 !important;
+  }
+  .tab-btn.active {
+    background: #0f172a;
+    color: #ffffff;
+    border-color: #0f172a;
+  }
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- Login -->
+<div id="saAuth" class="min-h-screen flex items-center justify-center p-4 bg-slate-950 text-slate-100">
+  <div class="w-full max-w-md rounded-xl border border-slate-800 bg-slate-900 p-6 space-y-5 shadow-2xl">
+    <div class="flex items-center justify-between gap-3 pb-3 border-b border-slate-800">
+      <div>
+        <h1 class="text-base font-extrabold text-white">Tadaffuq — شيت الرقابة والإدارة</h1>
+        <p class="text-xs text-slate-400">متابعة الدخول، تجاوز الحدود، والمقاعد والأجهزة</p>
+      </div>
+      <span class="text-[11px] font-bold px-2.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">Owner Only</span>
+    </div>
+
+    <form onsubmit="saSignIn(event)" class="space-y-3.5">
+      <div>
+        <label class="block text-xs font-bold text-slate-300 mb-1">البريد الإلكتروني</label>
+        <input id="saEmail" type="email" required dir="ltr" placeholder="owner@tadaffuq.app"
+          class="w-full bg-slate-950 text-white border border-slate-700 focus:border-sky-400 outline-none rounded px-3.5 py-2.5 text-sm">
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-slate-300 mb-1">كلمة المرور</label>
+        <input id="saPass" type="password" required dir="ltr" placeholder="••••••••••••"
+          class="w-full bg-slate-950 text-white border border-slate-700 focus:border-sky-400 outline-none rounded px-3.5 py-2.5 text-sm">
+      </div>
+      <button id="saLoginBtn" type="submit"
+        class="w-full bg-sky-600 hover:bg-sky-500 text-white py-2.5 rounded font-extrabold text-sm transition">
+        فتح الشيت
+      </button>
+    </form>
+    <div id="saAuthMsg" class="text-xs font-bold min-h-[1rem]"></div>
+  </div>
+</div>
+
+<!-- Main Sheet App -->
+<div id="saApp" class="hidden">
+  <!-- Top Formula / Control Bar -->
+  <header class="bg-white border-b border-slate-400 px-3 md:px-6 py-2.5 sticky top-0 z-20 flex items-center justify-between gap-2 flex-wrap">
+    <div class="flex items-center gap-2.5">
+      <span class="bg-emerald-700 text-white font-extrabold text-xs px-2.5 py-1 rounded">TD SHEET</span>
+      <div>
+        <h1 class="text-sm md:text-base font-extrabold text-slate-900">سجل المنصة والرقابة على الدخول وتجاوز الحدود</h1>
+        <p id="saUserInfo" class="text-[11px] text-slate-500"></p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap">
+      <button type="button" onclick="exportAllCsv()" class="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-3 py-1.5 rounded text-xs font-bold">تصدير CSV</button>
+      <button type="button" onclick="refreshAllSa()" class="bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 px-3 py-1.5 rounded text-xs font-bold">تحديث</button>
+      <button type="button" onclick="saSignOut()" class="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3 py-1.5 rounded text-xs font-bold">خروج</button>
+    </div>
+  </header>
+
+  <main class="p-3 md:p-5 space-y-4 max-w-[1440px] mx-auto">
+    <div id="saBannerMsg" class="text-xs font-bold"></div>
+
+    <!-- Excel-style KPI Row -->
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 tabular-nums">
+      <div class="bg-white border border-slate-400 rounded p-3">
+        <div class="text-[11px] font-bold text-slate-500">محاولات الدخول</div>
+        <div id="kTotalAttempts" class="text-lg font-extrabold text-slate-900 mt-0.5">0</div>
+      </div>
+      <div class="bg-white border border-slate-400 rounded p-3">
+        <div class="text-[11px] font-bold text-emerald-700">دخول ناجح</div>
+        <div id="kAllowed" class="text-lg font-extrabold text-emerald-700 mt-0.5">0</div>
+      </div>
+      <div class="bg-white border border-slate-400 rounded p-3">
+        <div class="text-[11px] font-bold text-rose-700">تجاوز حدود / محظور</div>
+        <div id="kBlocked" class="text-lg font-extrabold text-rose-700 mt-0.5">0</div>
+      </div>
+      <div class="bg-white border border-slate-400 rounded p-3">
+        <div class="text-[11px] font-bold text-amber-700">تنبيهات غير مقروءة</div>
+        <div id="kUnreadAlerts" class="text-lg font-extrabold text-amber-700 mt-0.5">0</div>
+      </div>
+      <div class="bg-white border border-slate-400 rounded p-3">
+        <div class="text-[11px] font-bold text-slate-500">الشركات</div>
+        <div id="kCompanies" class="text-lg font-extrabold text-slate-900 mt-0.5">0</div>
+      </div>
+      <div class="bg-white border border-slate-400 rounded p-3">
+        <div class="text-[11px] font-bold text-slate-500">المقاعد / الأجهزة</div>
+        <div id="kSeatsDevices" class="text-lg font-extrabold text-slate-900 mt-0.5">0 / 0</div>
+      </div>
+    </div>
+
+    <!-- Sheet Tabs + Search/Filter -->
+    <div class="bg-white border border-slate-400 rounded p-2.5 flex items-center justify-between gap-2 flex-wrap">
+      <div class="flex items-center gap-1.5 flex-wrap">
+        <button type="button" data-tab="all" onclick="switchTab('all')" class="tab-btn active px-3 py-1.5 rounded border border-slate-300 text-xs font-extrabold">الكل (شيت شامل)</button>
+        <button type="button" data-tab="activity" onclick="switchTab('activity')" class="tab-btn px-3 py-1.5 rounded border border-slate-300 text-xs font-extrabold bg-slate-50">1. حركة الدخول وتجاوز الحدود</button>
+        <button type="button" data-tab="companies" onclick="switchTab('companies')" class="tab-btn px-3 py-1.5 rounded border border-slate-300 text-xs font-extrabold bg-slate-50">2. الشركات والمقاعد والأجهزة</button>
+        <button type="button" data-tab="forms" onclick="switchTab('forms')" class="tab-btn px-3 py-1.5 rounded border border-slate-300 text-xs font-extrabold bg-slate-50">3. إضافة شركة / مقعد</button>
+      </div>
+      <div class="flex items-center gap-2">
+        <select id="filterOutcome" onchange="renderActivitySheet()" class="border border-slate-300 rounded px-2.5 py-1.5 text-xs font-bold bg-white">
+          <option value="all">كل المحاولات</option>
+          <option value="violations">تجاوز حدود / محظورة فقط</option>
+          <option value="allowed">دخول ناجح فقط</option>
+        </select>
+        <input id="searchBox" oninput="renderAllSheets()" placeholder="بحث بالبريد، الشركة، أو السبب..."
+          class="border border-slate-300 rounded px-3 py-1.5 text-xs w-52 sm:w-64">
+      </div>
+    </div>
+
+    <!-- SHEET 1: Login Attempts, Boundary Violations & Security Alerts -->
+    <section id="sec-activity" class="sheet-box">
+      <div class="sheet-bar">
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-extrabold">SHEET 1: سجل من يحاول الدخول ومن يتعدى حدوده</span>
+          <span class="text-[11px] bg-rose-500/20 text-rose-200 border border-rose-400/30 px-2 py-0.5 rounded">الصفوف الحمراء = تجاوز حد الأجهزة / محاولات فاشلة أو محظورة</span>
+        </div>
+        <button type="button" onclick="markAllAlertsRead()" class="bg-slate-700 hover:bg-slate-600 text-white px-2.5 py-1 rounded text-[11px] font-bold">تعليم التنبيهات كمقروءة</button>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="excel-table tabular-nums">
+          <thead>
+            <tr>
+              <th class="w-10">#</th>
+              <th>الوقت</th>
+              <th>الشركة</th>
+              <th>البريد الإلكتروني</th>
+              <th>الحالة / النتيجة</th>
+              <th>السبب أو تفاصيل التجاوز</th>
+              <th>الجهاز / المعرف</th>
+              <th>إجراء سريع</th>
+            </tr>
+          </thead>
+          <tbody id="sheetActivityBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- SHEET 2: Companies + Seats + Devices -->
+    <section id="sec-companies" class="sheet-box">
+      <div class="sheet-bar">
+        <span class="text-xs font-extrabold">SHEET 2: الشركات، المقاعد (GM / CFO)، والأجهزة المسجلة</span>
+        <span class="text-[11px] text-slate-300">تزويد الأجهزة وتفعيل/إيقاف أو حذف الشركات وإرسال أكواد التحقق</span>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="excel-table tabular-nums">
+          <thead>
+            <tr>
+              <th class="w-10">#</th>
+              <th>الشركة</th>
+              <th>حالة الشركة</th>
+              <th>حد الأجهزة</th>
+              <th>الأجهزة المعتمدة</th>
+              <th>المقاعد (GM / CFO)</th>
+              <th>تحكم الشركة</th>
+            </tr>
+          </thead>
+          <tbody id="sheetCompaniesBody"></tbody>
+        </table>
+      </div>
+
+      <div class="border-t border-slate-400 bg-slate-100 px-3 py-1.5 text-xs font-extrabold text-slate-800">
+        جدول المقاعد والأجهزة المرتبطة (تفصيلي)
+      </div>
+      <div class="grid grid-cols-1 xl:grid-cols-2">
+        <div class="overflow-x-auto border-b xl:border-b-0 xl:border-l border-slate-300">
+          <table class="excel-table tabular-nums">
+            <thead>
+              <tr>
+                <th>المقعد / البريد</th>
+                <th>الشركة</th>
+                <th>الدور</th>
+                <th>الحالة</th>
+                <th>تحكم</th>
+              </tr>
+            </thead>
+            <tbody id="sheetSeatsBody"></tbody>
+          </table>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="excel-table tabular-nums">
+            <thead>
+              <tr>
+                <th>الجهاز</th>
+                <th>الشركة</th>
+                <th>آخر ظهور</th>
+                <th>الحالة</th>
+                <th>تحكم</th>
+              </tr>
+            </thead>
+            <tbody id="sheetDevicesBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- SHEET 3: Quick Add Company & Seat -->
+    <section id="sec-forms" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div class="sheet-box">
+        <div class="sheet-bar">
+          <span class="text-xs font-extrabold">إضافة شركة جديدة</span>
+        </div>
+        <form onsubmit="addCompanySa(event)" class="p-4 space-y-3 text-xs">
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">اسم الشركة</label>
+            <input id="newCompName" required placeholder="مثال: شركة النور للتجارة"
+              class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">حد الأجهزة المسموح</label>
+            <input id="newCompMaxDev" type="number" min="1" max="50" value="2"
+              class="w-full border border-slate-300 rounded px-3 py-2 text-sm tabular-nums">
+          </div>
+          <button type="submit" class="w-full bg-slate-900 hover:bg-slate-800 text-white py-2 rounded font-extrabold text-xs">حفظ الشركة</button>
+        </form>
+      </div>
+
+      <div class="sheet-box">
+        <div class="sheet-bar">
+          <span class="text-xs font-extrabold">إضافة مقعد (مدير عام GM / مدير مالي CFO)</span>
+        </div>
+        <form onsubmit="addSeatSa(event)" class="p-4 space-y-3 text-xs">
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">اختر الشركة</label>
+            <select id="seatCompanyId" required class="w-full border border-slate-300 rounded px-3 py-2 text-sm bg-white"></select>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">البريد الإلكتروني</label>
+              <input id="seatEmail" type="email" required dir="ltr" placeholder="gm@company.com"
+                class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+            </div>
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">الدور</label>
+              <select id="seatRole" class="w-full border border-slate-300 rounded px-3 py-2 text-sm bg-white">
+                <option value="gm">المدير العام (GM)</option>
+                <option value="cfo">المدير المالي (CFO)</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">الاسم (اختياري)</label>
+            <input id="seatName" placeholder="الاسم" class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+          </div>
+          <button type="submit" class="w-full bg-emerald-700 hover:bg-emerald-600 text-white py-2 rounded font-extrabold text-xs">تفعيل المقعد</button>
+        </form>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- Recovery Code Modal -->
+<div id="codeModal" class="hidden fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
+  <div class="bg-white border border-slate-400 rounded-lg max-w-md w-full p-5 space-y-4 shadow-xl">
+    <div class="flex items-center justify-between border-b border-slate-200 pb-2.5">
+      <h2 class="text-sm font-extrabold text-slate-900">إرسال كود / رابط استعادة وتفعيل للشركة</h2>
+      <button type="button" onclick="closeCodeModal()" class="text-slate-500 hover:text-slate-800 text-xs font-extrabold">✕</button>
+    </div>
+    <div id="codeModalInfo" class="text-xs font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded p-2.5"></div>
+    <div class="space-y-2 text-xs">
+      <label class="block font-bold text-slate-700">اختر البريد المراد إرسال الكود / الرابط إليه:</label>
+      <select id="codeTargetEmail" class="w-full border border-slate-300 rounded px-3 py-2 text-xs font-mono bg-white" dir="ltr"></select>
+    </div>
+    <div class="bg-amber-50 border border-amber-300 rounded p-3 space-y-1.5">
+      <div class="text-[11px] font-bold text-amber-900">كود التحقق المؤقت (صالح 15 دقيقة لفك القفل / التأكيد):</div>
+      <div class="flex items-center justify-between gap-2">
+        <span id="generatedOtpCode" class="font-mono text-lg font-extrabold tracking-widest text-slate-900">------</span>
+        <button type="button" onclick="copyGeneratedCode()" class="bg-white hover:bg-amber-100 text-amber-900 border border-amber-400 px-2.5 py-1 rounded text-[11px] font-extrabold">نسخ الكود</button>
+      </div>
+    </div>
+    <div class="flex flex-col sm:flex-row gap-2 pt-1">
+      <button type="button" id="sendRecoveryLinkBtn" onclick="sendAuthRecoveryEmail()" class="flex-1 bg-sky-700 hover:bg-sky-600 text-white py-2 rounded text-xs font-extrabold">
+        إرسال رابط / كود عبر Supabase Auth
+      </button>
+      <button type="button" onclick="openMailClientWithCode()" class="flex-1 bg-emerald-700 hover:bg-emerald-600 text-white py-2 rounded text-xs font-extrabold">
+        فتح البريد بالكود جاهز
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Recovery Code Modal -->
+<div id="codeModal" class="hidden fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
+  <div class="bg-white border border-slate-400 rounded-lg max-w-md w-full p-5 space-y-4 shadow-xl">
+    <div class="flex items-center justify-between border-b border-slate-200 pb-2.5">
+      <h2 class="text-sm font-extrabold text-slate-900">إرسال كود / رابط استعادة وتفعيل للشركة</h2>
+      <button type="button" onclick="closeCodeModal()" class="text-slate-500 hover:text-slate-800 text-xs font-extrabold">✕</button>
+    </div>
+    <div id="codeModalInfo" class="text-xs font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded p-2.5"></div>
+    <div class="space-y-2 text-xs">
+      <label class="block font-bold text-slate-700">إيميلات الشركة المسجلة (حتى لو نسي العميل إيميله):</label>
+      <div id="companyEmailsList" class="bg-slate-50 border border-slate-200 rounded p-2 text-[11px] font-mono text-slate-700 space-y-1 max-h-24 overflow-y-auto" dir="ltr"></div>
+      <label class="block font-bold text-slate-700 pt-1">اختر البريد المراد إرسال الكود / الرابط إليه:</label>
+      <select id="codeTargetEmail" class="w-full border border-slate-300 rounded px-3 py-2 text-xs font-mono bg-white" dir="ltr"></select>
+    </div>
+    <div class="bg-amber-50 border border-amber-300 rounded p-3 space-y-1.5">
+      <div class="text-[11px] font-bold text-amber-900">كود التحقق المؤقت (صالح 15 دقيقة لفك القفل / التأكيد):</div>
+      <div class="flex items-center justify-between gap-2">
+        <span id="generatedOtpCode" class="font-mono text-lg font-extrabold tracking-widest text-slate-900">------</span>
+        <button type="button" onclick="copyGeneratedCode()" class="bg-white hover:bg-amber-100 text-amber-900 border border-amber-400 px-2.5 py-1 rounded text-[11px] font-extrabold">نسخ الكود</button>
+      </div>
+    </div>
+    <div class="flex flex-col sm:flex-row gap-2 pt-1">
+      <button type="button" id="sendRecoveryLinkBtn" onclick="sendAuthRecoveryEmail()" class="flex-1 bg-sky-700 hover:bg-sky-600 text-white py-2 rounded text-xs font-extrabold">
+        إرسال رابط / كود عبر Supabase Auth
+      </button>
+      <button type="button" onclick="openMailClientWithCode()" class="flex-1 bg-emerald-700 hover:bg-emerald-600 text-white py-2 rounded text-xs font-extrabold">
+        فتح البريد بالكود جاهز
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SB_URL = 'https://oorsnupcxmdqimuancsz.supabase.co';
+const SB_KEY = 'sb_publishable_nvrHdiBa-OmGnPHAXk0L1w_ZjkA8d5f';
+const sb = supabase.createClient(SB_URL, SB_KEY);
+const $ = id => document.getElementById(id);
+
+let saCompanies = [];
+let saSeats = [];
+let saDevices = [];
+let saAlerts = [];
+let saLogs = [];
+let activeTab = 'all';
+let activeCodeCompany = null;
+let currentOtp = '';
+let activeCodeCompany = null;
+let currentOtp = '';
+
+function setSaView(view){
+  $('saAuth').classList.toggle('hidden', view !== 'auth');
+  $('saApp').classList.toggle('hidden', view !== 'app');
+}
+
+function showSaBanner(text, type = 'info'){
+  const el = $('saBannerMsg');
+  const cls = {
+    info: 'rounded border border-slate-300 bg-white text-slate-800 px-3 py-2',
+    ok: 'rounded border border-emerald-300 bg-emerald-50 text-emerald-900 px-3 py-2',
+    err: 'rounded border border-rose-300 bg-rose-50 text-rose-900 px-3 py-2'
+  };
+  el.className = (cls[type] || cls.info) + ' text-xs font-bold';
+  el.textContent = text;
+}
+
+function switchTab(tab){
+  activeTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tab);
+    if (btn.dataset.tab !== tab) btn.classList.add('bg-slate-50');
+    else btn.classList.remove('bg-slate-50');
+  });
+  $('sec-activity').classList.toggle('hidden', !(tab === 'all' || tab === 'activity'));
+  $('sec-companies').classList.toggle('hidden', !(tab === 'all' || tab === 'companies'));
+  $('sec-forms').classList.toggle('hidden', !(tab === 'all' || tab === 'forms'));
+}
+
+async function isPlatformOwner(user){
+  if (!user) return false;
+  const email = String(user.email || '').trim().toLowerCase();
+  const metaRole = (user.app_metadata && user.app_metadata.role) || (user.user_metadata && user.user_metadata.role) || '';
+  if (metaRole === 'super_admin' || metaRole === 'platform_owner') return true;
+  try {
+    const {data, error} = await sb.from('platform_admins').select('id').eq('email', email).limit(1);
+    if (!error && data && data.length) return true;
+  } catch (e) {}
+  return false;
+}
+
+async function saSignIn(ev){
+  if (ev) ev.preventDefault();
+  const msg = $('saAuthMsg');
+  const btn = $('saLoginBtn');
+  msg.className = 'text-xs font-bold text-slate-300';
+  msg.textContent = 'جاري التحقق...';
+  btn.disabled = true;
+
+  const email = $('saEmail').value.trim().toLowerCase();
+  const password = $('saPass').value;
+  const {data, error} = await sb.auth.signInWithPassword({email, password});
+  btn.disabled = false;
+
+  if (error) {
+    msg.className = 'text-xs font-bold text-rose-400';
+    msg.textContent = error.message || 'بيانات الدخول غير صحيحة';
+    return;
+  }
+
+  const allowed = await isPlatformOwner(data.user);
+  if (!allowed) {
+    await sb.auth.signOut();
+    msg.className = 'text-xs font-bold text-rose-400';
+    msg.textContent = 'هذا الحساب غير مصرح له بدخول لوحة صاحب المنصة.';
+    return;
+  }
+  msg.textContent = '';
+  bootSa();
+}
+
+async function saSignOut(){
+  await sb.auth.signOut();
+  setSaView('auth');
+}
+
+async function bootSa(){
+  const {data:{session}} = await sb.auth.getSession();
+  if (!session || !session.user) {
+    setSaView('auth');
+    return;
+  }
+  const allowed = await isPlatformOwner(session.user);
+  if (!allowed) {
+    await sb.auth.signOut();
+    setSaView('auth');
+    $('saAuthMsg').className = 'text-xs font-bold text-rose-400';
+    $('saAuthMsg').textContent = 'هذا الحساب غير مصرح له بدخول لوحة صاحب المنصة.';
+    return;
+  }
+  $('saUserInfo').textContent = 'صاحب المنصة: ' + session.user.email;
+  setSaView('app');
+  await refreshAllSa();
+}
+
+async function refreshAllSa(){
+  showSaBanner('جاري تحميل بيانات الشيت من Supabase...', 'info');
+  try {
+    const [cRes, uRes, dRes, aRes, lRes] = await Promise.all([
+      sb.from('companies').select('*').order('created_at', {ascending: false}),
+      sb.from('company_users').select('*').order('created_at', {ascending: false}),
+      sb.from('user_devices').select('*').order('last_seen_at', {ascending: false}),
+      sb.from('admin_notifications').select('*').order('created_at', {ascending: false}).limit(150),
+      sb.from('access_logs').select('*').order('created_at', {ascending: false}).limit(200)
+    ]);
+
+    saCompanies = cRes.data || [];
+    saSeats = uRes.data || [];
+    saDevices = dRes.data || [];
+    saAlerts = aRes.data || [];
+    saLogs = lRes.data || [];
+
+    renderCompanySelect();
+    renderAllSheets();
+    showSaBanner('تم التحديث — جاهز للمتابعة كشيت.', 'ok');
+  } catch (e) {
+    showSaBanner('خطأ في التحميل: ' + (e.message || e), 'err');
+  }
+}
+
+function companyNameById(id){
+  const c = saCompanies.find(x => x.id === id);
+  return c ? c.name : (id || '-');
+}
+
+function companyByEmail(email){
+  const em = String(email || '').trim().toLowerCase();
+  const seat = saSeats.find(s => String(s.email || '').trim().toLowerCase() === em);
+  return seat ? companyNameById(seat.company_id) : '-';
+}
+
+function isViolationOutcome(outcome){
+  const o = String(outcome || '').toLowerCase();
+  return o.startsWith('blocked') || o.includes('limit') || o.includes('exceed') || o.includes('lock') || o.includes('invalid') || o.includes('denied') || o.includes('unapproved');
+}
+
+function detectDeviceKind(d){
+  const raw = String((d.device_type || '') + ' ' + (d.device_label || '') + ' ' + (d.user_agent || '') + ' ' + (d.device_id || '')).toLowerCase();
+  if (raw.includes('mobile') || raw.includes('android') || raw.includes('iphone') || raw.includes('ios') || raw.includes('موبايل') || raw.includes('تليفون')) {
+    return 'موبايل';
+  }
+  if (raw.includes('tablet') || raw.includes('ipad') || raw.includes('تابلت')) {
+    return 'تابلت';
+  }
+  return 'كمبيوتر / لابتوب';
+}
+
+function getUnifiedActivityRows(){
+  const q = String($('searchBox').value || '').trim().toLowerCase();
+  const mode = $('filterOutcome').value;
+
+  const logRows = saLogs.map(l => ({
+    ts: l.created_at || '',
+    company: companyByEmail(l.email),
+    email: l.email || '-',
+    status: l.outcome || 'unknown',
+    details: l.reason || l.device_label || '-',
+    device: l.device_id || l.device_label || '-',
+    violation: isViolationOutcome(l.outcome),
+    source: 'log'
+  }));
+
+  const alertRows = saAlerts.map(a => ({
+    ts: a.created_at || '',
+    company: companyByEmail(a.email),
+    email: a.email || '-',
+    status: a.alert_type || 'security_alert',
+    details: (a.title ? a.title + ' — ' : '') + (a.details || ''),
+    device: a.device_id || '-',
+    violation: true,
+    alertId: a.id,
+    isRead: !!a.is_read,
+    source: 'alert'
+  }));
+
+  let merged = [...alertRows, ...logRows].sort((a, b) => new Date(b.ts) - new Date(a.ts));
+
+  if (mode === 'violations') merged = merged.filter(r => r.violation);
+  if (mode === 'allowed') merged = merged.filter(r => !r.violation);
+
+  if (q) {
+    merged = merged.filter(r =>
+      String(r.company).toLowerCase().includes(q) ||
+      String(r.email).toLowerCase().includes(q) ||
+      String(r.status).toLowerCase().includes(q) ||
+      String(r.details).toLowerCase().includes(q) ||
+      String(r.device).toLowerCase().includes(q)
+    );
+  }
+  return merged;
+}
+
+function renderAllSheets(){
+  const activity = getUnifiedActivityRows();
+  const totalAttempts = saLogs.length + saAlerts.length;
+  const blockedCount = activity.filter(r => r.violation).length;
+  const allowedCount = Math.max(0, totalAttempts - blockedCount);
+  const unreadAlerts = saAlerts.filter(a => !a.is_read).length;
+  const approvedDev = saDevices.filter(d => d.is_approved).length;
+
+  $('kTotalAttempts').textContent = totalAttempts;
+  $('kAllowed').textContent = allowedCount;
+  $('kBlocked').textContent = blockedCount;
+  $('kUnreadAlerts').textContent = unreadAlerts;
+  $('kCompanies').textContent = saCompanies.length;
+  $('kSeatsDevices').textContent = saSeats.length + ' / ' + approvedDev;
+
+  renderActivitySheet(activity);
+  renderCompaniesSheet();
+  renderSeatsSheet();
+  renderDevicesSheet();
+}
+
+function renderActivitySheet(rows){
+  const list = rows || getUnifiedActivityRows();
+  const tb = $('sheetActivityBody');
+  tb.textContent = '';
+
+  if (!list.length) {
+    tb.innerHTML = '<tr><td colspan="8" class="text-center text-slate-500 py-6">لا توجد سجلات مطابقة.</td></tr>';
+    return;
+  }
+
+  list.forEach((r, idx) => {
+    const tr = document.createElement('tr');
+    if (r.violation) tr.classList.add('violation-row');
+
+    const badgeCls = r.violation
+      ? 'bg-rose-100 text-rose-800 border border-rose-300'
+      : 'bg-emerald-100 text-emerald-800 border border-emerald-300';
+
+    tr.innerHTML =
+      '<td class="font-bold text-slate-500">' + (idx + 1) + '</td>' +
+      '<td class="whitespace-nowrap text-slate-600">' + (r.ts ? new Date(r.ts).toLocaleString('ar-EG') : '-') + '</td>' +
+      '<td class="font-bold text-slate-900">' + r.company + '</td>' +
+      '<td class="font-mono text-xs" dir="ltr">' + r.email + '</td>' +
+      '<td><span class="px-2 py-0.5 rounded text-[11px] font-extrabold ' + badgeCls + '">' + r.status + '</span></td>' +
+      '<td class="text-slate-800 font-semibold">' + r.details + '</td>' +
+      '<td class="font-mono text-[11px] text-slate-600" dir="ltr">' + String(r.device).slice(0, 24) + '</td>';
+
+    const actTd = document.createElement('td');
+    actTd.className = 'flex items-center gap-1 flex-wrap';
+
+    const matchedCompany = saCompanies.find(c => c.name === r.company);
+    const matchedDevice = saDevices.find(d =>
+      (r.device && r.device !== '-' && (d.device_id === r.device || d.device_label === r.device)) ||
+      (matchedCompany && d.company_id === matchedCompany.id && !d.is_approved)
+    );
+
+    if (r.violation && matchedCompany) {
+      const quickAllowBtn = document.createElement('button');
+      quickAllowBtn.type = 'button';
+      quickAllowBtn.className = 'bg-emerald-600 hover:bg-emerald-500 text-white px-2 py-0.5 rounded text-[11px] font-extrabold';
+      quickAllowBtn.textContent = 'زوّد +1 واعتمد';
+      quickAllowBtn.onclick = async () => {
+        const nextLim = Number(matchedCompany.max_company_devices || 2) + 1;
+        showSaBanner('جاري زيادة حد الأجهزة لـ ' + matchedCompany.name + ' إلى ' + nextLim + '...', 'info');
+        await sb.from('companies').update({max_company_devices: nextLim}).eq('id', matchedCompany.id);
+        if (matchedDevice) {
+          await sb.from('user_devices').update({is_approved: true}).eq('id', matchedDevice.id);
+        }
+        if (r.source === 'alert' && r.alertId) {
+          await sb.from('admin_notifications').update({is_read: true}).eq('id', r.alertId);
+        }
+        await refreshAllSa();
+        showSaBanner('تم زيادة الحد إلى ' + nextLim + ' واعتماد الجهاز في ثانية.', 'ok');
+      };
+      actTd.appendChild(quickAllowBtn);
+    }
+
+    if (r.source === 'alert' && !r.isRead) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 px-2 py-0.5 rounded text-[11px] font-bold';
+      btn.textContent = 'مقروء';
+      btn.onclick = async () => {
+        await sb.from('admin_notifications').update({is_read: true}).eq('id', r.alertId);
+        await refreshAllSa();
+      };
+      actTd.appendChild(btn);
+    } else if (!actTd.children.length) {
+      actTd.textContent = '-';
+      actTd.className = 'text-slate-400';
+    }
+    tr.appendChild(actTd);
+    tb.appendChild(tr);
+  });
+}
+
+function generateSixDigitCode(){
+  const n = Math.floor(100000 + Math.random() * 900000);
+  return String(n);
+}
+
+function openCodeModal(company, preselectedEmail){
+  activeCodeCompany = company;
+  currentOtp = generateSixDigitCode();
+  $('generatedOtpCode').textContent = currentOtp;
+  $('codeModalInfo').textContent = 'الشركة: ' + company.name;
+
+  const sel = $('codeTargetEmail');
+  sel.textContent = '';
+
+  const companySeats = saSeats.filter(s => s.company_id === company.id && s.email);
+  const emails = [...new Set(companySeats.map(s => String(s.email).trim().toLowerCase()))];
+  if (preselectedEmail && !emails.includes(String(preselectedEmail).trim().toLowerCase())) {
+    emails.unshift(String(preselectedEmail).trim().toLowerCase());
+  }
+
+  if (emails.length) {
+    emails.forEach(em => {
+      const opt = document.createElement('option');
+      opt.value = em;
+      opt.textContent = em;
+      sel.appendChild(opt);
+    });
+    if (preselectedEmail) sel.value = String(preselectedEmail).trim().toLowerCase();
+  } else {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = 'لا يوجد بريد مسجل لهذه الشركة بعد';
+    sel.appendChild(opt);
+  }
+
+  $('codeModal').classList.remove('hidden');
+}
+
+function closeCodeModal(){
+  $('codeModal').classList.add('hidden');
+  activeCodeCompany = null;
+}
+
+async function copyGeneratedCode(){
+  if (!currentOtp) return;
+  try {
+    await navigator.clipboard.writeText(currentOtp);
+    showSaBanner('تم نسخ كود التحقق (' + currentOtp + ') إلى الحافظة.', 'ok');
+  } catch (e) {
+    showSaBanner('كود التحقق الحالي: ' + currentOtp, 'info');
+  }
+}
+
+async function sendAuthRecoveryEmail(){
+  const email = String($('codeTargetEmail').value || '').trim().toLowerCase();
+  if (!email) {
+    showSaBanner('اختر بريداً إلكترونياً صالحاً لإرسال الرابط.', 'err');
+    return;
+  }
+
+  const btn = $('sendRecoveryLinkBtn');
+  btn.disabled = true;
+  showSaBanner('جاري إرسال رابط / كود الاستعادة إلى ' + email + '...', 'info');
+
+  try {
+    const {error} = await sb.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + window.location.pathname
+    });
+    if (error) throw error;
+
+    try {
+      await sb.from('access_logs').insert({
+        email,
+        outcome: 'recovery_sent',
+        reason: 'تم إرسال رابط/كود استعادة من لوحة صاحب المنصة (' + (activeCodeCompany ? activeCodeCompany.name : '') + ') - OTP: ' + currentOtp
+      });
+    } catch (e) {}
+
+    closeCodeModal();
+    await refreshAllSa();
+    showSaBanner('تم إرسال رابط استعادة الحساب إلى ' + email + ' بنجاح (وتم تسجيل الكود ' + currentOtp + ').', 'ok');
+  } catch (err) {
+    showSaBanner('تعذر إرسال الرابط عبر Auth: ' + (err.message || err) + ' — يمكنك استخدام زر "فتح البريد بالكود جاهز".', 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function openMailClientWithCode(){
+  const email = String($('codeTargetEmail').value || '').trim().toLowerCase();
+  const compName = activeCodeCompany ? activeCodeCompany.name : '';
+  const subject = encodeURIComponent('كود تأكيد واستعادة الدخول — منصة تدفق (' + compName + ')');
+  const body = encodeURIComponent(
+    'مرحباً،
+
+' +
+    'هذا كود التأكيد الخاص باستعادة الدخول / فك القفل لشركة ' + compName + ':
+' +
+    'الكود: ' + currentOtp + '
+
+' +
+    'يرجى إدخال الكود أو تحديث كلمة المرور ثم إعادة المحاولة.
+' +
+    'فريق منصة تدفق (Tadaffuq)'
+  );
+
+  if (email) {
+    try {
+      await sb.from('access_logs').insert({
+        email,
+        outcome: 'otp_prepared',
+        reason: 'تجهيز كود تحقق (' + currentOtp + ') لشركة ' + compName
+      });
+    } catch (e) {}
+  }
+
+  closeCodeModal();
+  window.location.href = 'mailto:' + encodeURIComponent(email) + '?subject=' + subject + '&body=' + body;
+  showSaBanner('تم تجهيز الكود (' + currentOtp + ') وفتح تطبيق البريد.', 'ok');
+}
+
+async function deleteCompanySa(c){
+  const firstOk = confirm('⚠️ تحذير: هل أنت متأكد من حذف شركة "' + c.name + '" نهائياً؟
+سيتم مسح جميع المقاعد والأجهزة والمؤشرات المرتبطة بها بدون إمكانية الاسترجاع.');
+  if (!firstOk) return;
+
+  const typed = prompt('لتأكيد الحذف النهائي، اكتب اسم الشركة بالضبط:
+' + c.name);
+  if (typed === null || typed.trim() !== String(c.name || '').trim()) {
+    showSaBanner('تم إلغاء الحذف لأن اسم الشركة غير مطابق.', 'info');
+    return;
+  }
+
+  showSaBanner('جاري حذف شركة "' + c.name + '" وبياناتها نهائياً...', 'info');
+  try {
+    const {error: devErr} = await sb.from('user_devices').delete().eq('company_id', c.id);
+    if (devErr) throw devErr;
+
+    const {error: usrErr} = await sb.from('company_users').delete().eq('company_id', c.id);
+    if (usrErr) throw usrErr;
+
+    const {error: metErr} = await sb.from('company_metrics').delete().eq('company_id', c.id);
+    if (metErr) throw metErr;
+
+    const {error: compErr} = await sb.from('companies').delete().eq('id', c.id);
+    if (compErr) throw compErr;
+
+    await refreshAllSa();
+    showSaBanner('تم حذف شركة "' + c.name + '" نهائياً بنجاح.', 'ok');
+  } catch (err) {
+    showSaBanner('تعذر حذف الشركة: ' + (err.message || err), 'err');
+  }
+}
+
+function generateSixDigitCode(){
+  const n = Math.floor(100000 + Math.random() * 900000);
+  return String(n);
+}
+
+function openCodeModal(company, preselectedEmail){
+  activeCodeCompany = company;
+  currentOtp = generateSixDigitCode();
+  $('generatedOtpCode').textContent = currentOtp;
+  $('codeModalInfo').textContent = 'الشركة: ' + company.name;
+
+  const sel = $('codeTargetEmail');
+  const listBox = $('companyEmailsList');
+  sel.textContent = '';
+  listBox.textContent = '';
+
+  const companySeats = saSeats.filter(s => s.company_id === company.id && s.email);
+  const emails = [...new Set(companySeats.map(s => String(s.email).trim().toLowerCase()))];
+  if (preselectedEmail && !emails.includes(String(preselectedEmail).trim().toLowerCase())) {
+    emails.unshift(String(preselectedEmail).trim().toLowerCase());
+  }
+
+  if (emails.length) {
+    emails.forEach(em => {
+      const seatObj = companySeats.find(s => String(s.email).trim().toLowerCase() === em);
+      const roleTag = seatObj && seatObj.role ? ' [' + String(seatObj.role).toUpperCase() + ']' : '';
+
+      const row = document.createElement('div');
+      row.className = 'flex items-center justify-between gap-2 py-0.5 border-b last:border-b-0 border-slate-200';
+      const span = document.createElement('span');
+      span.textContent = em + roleTag;
+      const pickBtn = document.createElement('button');
+      pickBtn.type = 'button';
+      pickBtn.className = 'bg-white hover:bg-sky-50 text-sky-800 border border-sky-300 px-2 py-0.5 rounded text-[10px] font-bold font-sans';
+      pickBtn.textContent = 'اختيار';
+      pickBtn.onclick = () => { sel.value = em; };
+      row.append(span, pickBtn);
+      listBox.appendChild(row);
+
+      const opt = document.createElement('option');
+      opt.value = em;
+      opt.textContent = em + roleTag;
+      sel.appendChild(opt);
+    });
+    if (preselectedEmail) sel.value = String(preselectedEmail).trim().toLowerCase();
+  } else {
+    listBox.textContent = 'لا يوجد بريد مسجل لهذه الشركة في المقاعد حتى الآن.';
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = 'لا يوجد بريد مسجل لهذه الشركة بعد';
+    sel.appendChild(opt);
+  }
+
+  $('codeModal').classList.remove('hidden');
+}
+
+function closeCodeModal(){
+  $('codeModal').classList.add('hidden');
+  activeCodeCompany = null;
+}
+
+async function copyGeneratedCode(){
+  if (!currentOtp) return;
+  try {
+    await navigator.clipboard.writeText(currentOtp);
+    showSaBanner('تم نسخ كود التحقق (' + currentOtp + ') إلى الحافظة.', 'ok');
+  } catch (e) {
+    showSaBanner('كود التحقق الحالي: ' + currentOtp, 'info');
+  }
+}
+
+async function sendAuthRecoveryEmail(){
+  const email = String($('codeTargetEmail').value || '').trim().toLowerCase();
+  if (!email) {
+    showSaBanner('اختر بريداً إلكترونياً صالحاً لإرسال الرابط.', 'err');
+    return;
+  }
+
+  const btn = $('sendRecoveryLinkBtn');
+  btn.disabled = true;
+  showSaBanner('جاري إرسال رابط / كود الاستعادة إلى ' + email + '...', 'info');
+
+  try {
+    const {error} = await sb.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + window.location.pathname
+    });
+    if (error) throw error;
+
+    try {
+      await sb.from('access_logs').insert({
+        email,
+        outcome: 'recovery_sent',
+        reason: 'تم إرسال رابط/كود استعادة من لوحة صاحب المنصة (' + (activeCodeCompany ? activeCodeCompany.name : '') + ') - OTP: ' + currentOtp
+      });
+    } catch (e) {}
+
+    closeCodeModal();
+    await refreshAllSa();
+    showSaBanner('تم إرسال رابط استعادة الحساب إلى ' + email + ' بنجاح (وتم تسجيل الكود ' + currentOtp + ').', 'ok');
+  } catch (err) {
+    showSaBanner('تعذر إرسال الرابط عبر Auth: ' + (err.message || err) + ' — يمكنك استخدام زر "فتح البريد بالكود جاهز".', 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function openMailClientWithCode(){
+  const email = String($('codeTargetEmail').value || '').trim().toLowerCase();
+  const compName = activeCodeCompany ? activeCodeCompany.name : '';
+  const subject = encodeURIComponent('كود تأكيد واستعادة الدخول — منصة تدفق (' + compName + ')');
+  const body = encodeURIComponent(
+    'مرحباً،
+
+' +
+    'هذا كود التأكيد الخاص باستعادة الدخول / فك القفل لشركة ' + compName + ':
+' +
+    'الكود: ' + currentOtp + '
+
+' +
+    'يرجى إدخال الكود أو تحديث كلمة المرور ثم إعادة المحاولة.
+' +
+    'فريق منصة تدفق (Tadaffuq)'
+  );
+
+  if (email) {
+    try {
+      await sb.from('access_logs').insert({
+        email,
+        outcome: 'otp_prepared',
+        reason: 'تجهيز كود تحقق (' + currentOtp + ') لشركة ' + compName
+      });
+    } catch (e) {}
+  }
+
+  closeCodeModal();
+  window.location.href = 'mailto:' + encodeURIComponent(email) + '?subject=' + subject + '&body=' + body;
+  showSaBanner('تم تجهيز الكود (' + currentOtp + ') وفتح تطبيق البريد.', 'ok');
+}
+
+function renderCompaniesSheet(){
+  const q = String($('searchBox').value || '').trim().toLowerCase();
+  const tb = $('sheetCompaniesBody');
+  tb.textContent = '';
+
+  const filtered = saCompanies.filter(c => !q || String(c.name).toLowerCase().includes(q));
+  filtered.forEach((c, i) => {
+    const active = c.is_active !== false;
+    const maxDev = Number(c.max_company_devices || 2);
+    const devApproved = saDevices.filter(d => d.company_id === c.id && d.is_approved).length;
+    const seats = saSeats.filter(s => s.company_id === c.id && s.status === 'active');
+    const seatSummary = seats.map(s => s.role.toUpperCase() + ': ' + s.email).join(' | ') || 'لا يوجد مقاعد مفعلة';
+
+    const overLimit = devApproved > maxDev;
+    const tr = document.createElement('tr');
+    if (overLimit || !active) tr.classList.add('violation-row');
+
+    tr.innerHTML =
+      '<td class="font-bold text-slate-500">' + (i + 1) + '</td>' +
+      '<td class="font-extrabold text-slate-900">' + c.name + '</td>' +
+      '<td><span class="px-2 py-0.5 rounded text-[11px] font-extrabold ' + (active ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800') + '">' + (active ? 'نشطة' : 'موقوفة') + '</span></td>' +
+      '<td class="font-extrabold">' + maxDev + '</td>' +
+      '<td class="font-extrabold ' + (overLimit ? 'text-rose-700' : 'text-slate-900') + '">' + devApproved + ' / ' + maxDev + '</td>' +
+      '<td class="text-xs font-semibold text-slate-700">' + seatSummary + '</td>';
+
+    const td = document.createElement('td');
+    td.className = 'flex items-center gap-1.5 flex-wrap';
+
+    const b1 = document.createElement('button');
+    b1.type = 'button';
+    b1.className = 'px-2.5 py-1 rounded text-[11px] font-bold border ' + (active ? 'bg-rose-50 text-rose-700 border-rose-300' : 'bg-emerald-50 text-emerald-700 border-emerald-300');
+    b1.textContent = active ? 'إيقاف' : 'تفعيل';
+    b1.onclick = async () => {
+      await sb.from('companies').update({is_active: !active}).eq('id', c.id);
+      await refreshAllSa();
+    };
+
+    async function setDeviceLimitInstant(nextLimit){
+      const cleanLimit = Math.max(1, Math.min(50, Number(nextLimit)));
+      if (!isFinite(cleanLimit)) return;
+      showSaBanner('جاري تحديث حد الأجهزة لشركة ' + c.name + ' إلى ' + cleanLimit + '...', 'info');
+      const {error} = await sb.from('companies').update({max_company_devices: cleanLimit}).eq('id', c.id);
+      if (error) {
+        showSaBanner('تعذر تحديث حد الأجهزة: ' + error.message, 'err');
+        return;
+      }
+      await refreshAllSa();
+      showSaBanner('تم في ثانية تحديث حد الأجهزة لشركة ' + c.name + ' إلى ' + cleanLimit + ' أجهزة.', 'ok');
+    }
+
+    const plus1Btn = document.createElement('button');
+    plus1Btn.type = 'button';
+    plus1Btn.className = 'px-2 py-1 rounded text-[11px] font-extrabold bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-300';
+    plus1Btn.textContent = '+1 جهاز';
+    plus1Btn.onclick = () => setDeviceLimitInstant(maxDev + 1);
+
+    const plus2Btn = document.createElement('button');
+    plus2Btn.type = 'button';
+    plus2Btn.className = 'px-2 py-1 rounded text-[11px] font-extrabold bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-300';
+    plus2Btn.textContent = '+2 جهاز';
+    plus2Btn.onclick = () => setDeviceLimitInstant(maxDev + 2);
+
+    const b2 = document.createElement('button');
+    b2.type = 'button';
+    b2.className = 'px-2 py-1 rounded text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300';
+    b2.textContent = 'رقم محدد';
+    b2.onclick = async () => {
+      const nextVal = prompt('حد الأجهزة لشركة ' + c.name + ':', String(maxDev));
+      if (!nextVal) return;
+      await setDeviceLimitInstant(nextVal);
+    };
+
+    const codeBtn = document.createElement('button');
+    codeBtn.type = 'button';
+    codeBtn.className = 'px-2.5 py-1 rounded text-[11px] font-extrabold bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300';
+    codeBtn.textContent = 'إرسال كود';
+    codeBtn.onclick = () => openCodeModal(c, seats[0] ? seats[0].email : '');
+
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'px-2.5 py-1 rounded text-[11px] font-extrabold bg-red-700 hover:bg-red-800 text-white border border-red-900';
+    delBtn.textContent = 'حذف';
+    delBtn.onclick = () => deleteCompanySa(c);
+
+    const codeBtn = document.createElement('button');
+    codeBtn.type = 'button';
+    codeBtn.className = 'px-2.5 py-1 rounded text-[11px] font-extrabold bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300';
+    codeBtn.textContent = 'إرسال كود';
+    codeBtn.onclick = () => openCodeModal(c, seats[0] ? seats[0].email : '');
+
+    td.append(b1, plus1Btn, plus2Btn, b2, codeBtn, delBtn, codeBtn);
+    tr.appendChild(td);
+    tb.appendChild(tr);
+  });
+}
+
+function renderSeatsSheet(){
+  const q = String($('searchBox').value || '').trim().toLowerCase();
+  const tb = $('sheetSeatsBody');
+  tb.textContent = '';
+  const filtered = saSeats.filter(s => !q || String(s.email).toLowerCase().includes(q) || companyNameById(s.company_id).toLowerCase().includes(q));
+
+  filtered.forEach(s => {
+    const active = s.status === 'active';
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td class="font-mono text-xs" dir="ltr">' + s.email + '</td>' +
+      '<td class="font-bold">' + companyNameById(s.company_id) + '</td>' +
+      '<td class="font-extrabold text-indigo-800">' + s.role.toUpperCase() + '</td>' +
+      '<td><span class="px-2 py-0.5 rounded text-[11px] font-bold ' + (active ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800') + '">' + (active ? 'مفعل' : 'موقوف') + '</span></td>';
+
+    const td = document.createElement('td');
+    td.className = 'flex items-center gap-1 flex-wrap';
+
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'px-2 py-0.5 rounded text-[11px] font-bold border ' + (active ? 'bg-rose-50 text-rose-700 border-rose-300' : 'bg-emerald-50 text-emerald-700 border-emerald-300');
+    b.textContent = active ? 'إيقاف' : 'تفعيل';
+    b.onclick = async () => {
+      await sb.from('company_users').update({status: active ? 'suspended' : 'active'}).eq('id', s.id);
+      await refreshAllSa();
+    };
+
+    const seatCodeBtn = document.createElement('button');
+    seatCodeBtn.type = 'button';
+    seatCodeBtn.className = 'px-2 py-0.5 rounded text-[11px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300';
+    seatCodeBtn.textContent = 'كود';
+    seatCodeBtn.onclick = () => {
+      const comp = saCompanies.find(x => x.id === s.company_id) || {id: s.company_id, name: companyNameById(s.company_id)};
+      openCodeModal(comp, s.email);
+    };
+
+    td.append(b, seatCodeBtn);
+    tr.appendChild(td);
+    tb.appendChild(tr);
+  });
+}
+
+function renderDevicesSheet(){
+  const q = String($('searchBox').value || '').trim().toLowerCase();
+  const tb = $('sheetDevicesBody');
+  tb.textContent = '';
+  const filtered = saDevices.filter(d => !q || String(d.device_label || d.device_id).toLowerCase().includes(q) || companyNameById(d.company_id).toLowerCase().includes(q));
+
+  filtered.forEach(d => {
+    const ok = !!d.is_approved;
+    const kind = detectDeviceKind(d);
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td class="text-xs font-semibold">' + (d.device_label || d.device_id) + ' <span class="mr-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-300 text-[10px] font-bold">' + kind + '</span></td>' +
+      '<td class="font-bold">' + companyNameById(d.company_id) + '</td>' +
+      '<td class="text-[11px] text-slate-500">' + (d.last_seen_at ? new Date(d.last_seen_at).toLocaleString('ar-EG') : '-') + '</td>' +
+      '<td><span class="px-2 py-0.5 rounded text-[11px] font-bold ' + (ok ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800') + '">' + (ok ? 'معتمد' : 'موقوف') + '</span></td>';
+
+    const td = document.createElement('td');
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'px-2 py-0.5 rounded text-[11px] font-bold border ' + (ok ? 'bg-rose-50 text-rose-700 border-rose-300' : 'bg-emerald-50 text-emerald-700 border-emerald-300');
+    b.textContent = ok ? 'إيقاف' : 'اعتماد';
+    b.onclick = async () => {
+      await sb.from('user_devices').update({is_approved: !ok}).eq('id', d.id);
+      await refreshAllSa();
+    };
+    td.appendChild(b);
+    tr.appendChild(td);
+    tb.appendChild(tr);
+  });
+}
+
+function renderCompanySelect(){
+  const sel = $('seatCompanyId');
+  sel.textContent = '';
+  saCompanies.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = c.name + (c.is_active === false ? ' (موقوفة)' : '');
+    sel.appendChild(opt);
+  });
+}
+
+async function markAllAlertsRead(){
+  await sb.from('admin_notifications').update({is_read: true}).eq('is_read', false);
+  await refreshAllSa();
+}
+
+async function addCompanySa(ev){
+  ev.preventDefault();
+  const name = $('newCompName').value.trim();
+  const maxDev = Math.max(1, Number($('newCompMaxDev').value || 2));
+  if (!name) return;
+
+  const {data, error} = await sb.from('companies').insert({
+    name,
+    max_seats: 2,
+    max_company_devices: maxDev,
+    is_active: true
+  }).select().single();
+
+  if (error) {
+    showSaBanner('خطأ في إضافة الشركة: ' + error.message, 'err');
+    return;
+  }
+
+  try {
+    await sb.from('company_metrics').insert({
+      company_id: data.id,
+      opening_cash: 0,
+      cash_on_hand: 0,
+      burn_rate: 0,
+      runway_months: null
+    });
+  } catch (e) {}
+
+  $('newCompName').value = '';
+  $('newCompMaxDev').value = '2';
+  await refreshAllSa();
+  showSaBanner('تمت إضافة الشركة بنجاح. أضف الآن بريد المدير العام أو المدير المالي من نموذج تفعيل المقعد.', 'ok');
+}
+
+async function addSeatSa(ev){
+  ev.preventDefault();
+  const company_id = $('seatCompanyId').value;
+  const email = $('seatEmail').value.trim().toLowerCase();
+  const role = $('seatRole').value;
+  const full_name = $('seatName').value.trim() || null;
+  if (!company_id || !email) return;
+
+  const {error} = await sb.from('company_users').insert({
+    company_id,
+    email,
+    role,
+    full_name,
+    status: 'active'
+  });
+
+  if (error) {
+    showSaBanner('خطأ في إضافة المقعد: ' + error.message, 'err');
+    return;
+  }
+
+  $('seatEmail').value = '';
+  $('seatName').value = '';
+  await refreshAllSa();
+  showSaBanner('تم تفعيل المقعد بنجاح.', 'ok');
+}
+
+function exportAllCsv(){
+  const rows = getUnifiedActivityRows();
+  const esc = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+  const header = ['Time', 'Company', 'Email', 'Status', 'Details', 'Device', 'Violation'].map(esc).join(',');
+  const lines = rows.map(r => [r.ts, r.company, r.email, r.status, r.details, r.device, r.violation ? 'YES' : 'NO'].map(esc).join(','));
+  const csv = '\uFEFF' + [header, ...lines].join('
+');
+  const blob = new Blob([csv], {type: 'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'tadaffuq-security-sheet.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+bootSa();
+</script>
+</body>
+</html>
